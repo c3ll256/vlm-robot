@@ -1,0 +1,4 @@
+psutil
+mcp
+openai
+requests
