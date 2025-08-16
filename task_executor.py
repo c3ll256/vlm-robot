@@ -15,11 +15,12 @@ from ai_agent import AIAgent
 class TaskExecutor:
     """任务执行器，负责管理多步推理和工具调用"""
     
-    def __init__(self, session: ClientSession, ai_agent: AIAgent, max_steps: int = 10, debug: bool = False):
+    def __init__(self, session: ClientSession, ai_agent: AIAgent, max_steps: int = 10, debug: bool = False, enable_camera: bool = True):
         self.session = session
         self.ai_agent = ai_agent
         self.max_steps = max_steps
         self.debug = debug
+        self.enable_camera = enable_camera
         self.executed_tools: Set[str] = set()
         self.step_count = 0
         self.last_image_hash: Optional[str] = None
@@ -49,6 +50,10 @@ class TaskExecutor:
         Returns:
             Tuple[Optional[str], Optional[str]]: (data_url, content_hash)
         """
+        if not self.enable_camera:
+            self._debug_log("摄像头功能已禁用")
+            return None, None
+            
         try:
             PhosphoClient = self._load_phosphobot_client()
             client = PhosphoClient()
@@ -139,6 +144,12 @@ class TaskExecutor:
             
             if action_type == "error":
                 error_msg = action_data.get("error", "未知错误")
+                self._debug_log(f"AI 决策出错: {error_msg}")
+                
+                # 特殊处理空响应错误
+                if "空响应" in error_msg or "重新开始" in error_msg:
+                    return "AI 思考遇到了问题，让我们重新开始这个任务吧！😊 请再次告诉我你想要什么。"
+                
                 return f"执行出错: {error_msg}"
             
             elif action_type == "complete":
@@ -159,9 +170,10 @@ class TaskExecutor:
                 new_image_url, _ = self._fetch_camera_frame(force_new=True)
                 if new_image_url:
                     current_image_url = new_image_url
-                    self._debug_log("已获取新的摄像头图像")
+                    # 将新图像信息反馈给 AI
+                    self.ai_agent.add_to_history("user", "已获取最新摄像头图像")
                 else:
-                    self._debug_log("无法获取摄像头图像")
+                    self.ai_agent.add_to_history("user", "无法获取摄像头图像")
                 continue
             
             elif action_type == "tool":
@@ -188,7 +200,7 @@ class TaskExecutor:
                     new_image_url, _ = self._fetch_camera_frame(force_new=True)
                     if new_image_url:
                         current_image_url = new_image_url
-                        self._debug_log("已获取移动后的摄像头图像")
+                        self.ai_agent.add_to_history("user", "已获取移动后的摄像头图像")
                 
                 continue
             

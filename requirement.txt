@@ -1,4 +1,5 @@
 psutil
 mcp
-openai
+zai-sdk
 requests
+python-dotenv

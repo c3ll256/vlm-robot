@@ -81,8 +81,27 @@ python bot_control.py --model "gpt-4" --debug
 
 ## 配置
 
-- `OPENAI_API_KEY`: LLM API密钥
-- `OPENAI_BASE_URL`: API基础URL（可选）
+- `ZHIPUAI_API_KEY`: 智谱 AI API 密钥（兼容 `OPENAI_API_KEY`）
 - `OPENAI_MODEL`: 模型名称（默认: glm-4.5v）
 - `MCP_COMMAND`: MCP命令（可选）
 - `MCP_ARGS`: MCP参数（可选）
+
+## 智谱 AI SDK 配置
+
+系统已切换为智谱 AI 官方 SDK，支持更好的多模态功能：
+
+### 安装依赖
+```bas
+pip install zai-sdk
+```
+
+### 环境变量配置
+```bash
+export ZHIPUAI_API_KEY="your_zhipuai_api_key_here"
+```
+
+### 支持的模型
+- `glm-4.5v`: 新旗舰视觉推理模型，支持图像、视频、文档理解
+- `glm-4.1v-thinking`: 思考模式模型
+
+参考文档：[智谱 AI GLM-4.5V](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-4.5v#python)

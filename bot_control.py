@@ -13,9 +13,9 @@ from ai_agent import AIAgent
 from task_executor import TaskExecutor
 
 try:
-    from openai import OpenAI  # OpenAI 兼容客户端，可指向 ZhipuAI 的 OpenAI 兼容接口
+    from zai import ZhipuAiClient  # 智谱 AI 官方 SDK
 except Exception:  # pragma: no cover
-    OpenAI = None  # type: ignore
+    ZhipuAiClient = None  # type: ignore
 
 
 PHOSPHO_SERVER_PATH = str(
@@ -45,15 +45,12 @@ def get_server_params() -> StdioServerParameters:
 
 
 def get_llm_client() -> Any:
-    if OpenAI is None:
-        raise RuntimeError("未安装 openai 库。请先执行: pip install openai")
-    api_key = os.environ.get("OPENAI_API_KEY")
+    if ZhipuAiClient is None:
+        raise RuntimeError("请先执行: pip install zai-sdk")
+    api_key = os.environ.get("ZHIPUAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("请设置环境变量 OPENAI_API_KEY (可使用 ZhipuAI 的 API Key)")
-    base_url = os.environ.get("OPENAI_BASE_URL")  # 若使用 ZhipuAI 的 OpenAI 兼容接口，请配置此变量
-    if base_url:
-        return OpenAI(api_key=api_key, base_url=base_url)
-    return OpenAI(api_key=api_key)
+        raise RuntimeError("请设置环境变量 ZHIPUAI_API_KEY (智谱 AI 的 API Key)")
+    return ZhipuAiClient(api_key=api_key)
 
 
 def build_tools_brief(tools_obj: Any) -> str:
@@ -102,7 +99,7 @@ async def run_chat(model: str | None = None, debug: bool = False) -> None:
                 print("\n助手正在思考并执行...")
                 
                 # 创建任务执行器并执行任务
-                task_executor = TaskExecutor(session, ai_agent, max_steps=10, debug=debug)
+                task_executor = TaskExecutor(session, ai_agent, max_steps=10, debug=debug, enable_camera=True)
                 
                 try:
                     result = await task_executor.execute_task(user_message, initial_image=True)
