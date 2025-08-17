@@ -42,10 +42,10 @@ class AIAgent:
 输出规则（只输出JSON，不要其他内容）：
   1. 如果需要执行工具操作，输出（注意 action 必须是 tool，工具名放在 tool 字段）：
       {{"action": "tool", "tool": "工具名", "arguments": {{参数对象}}, "reason": "执行原因"}}
-  2. 如果需要更多信息或观察，输出：
+  2. 如果需要摄像头画面进行观察，输出：
       {{"action": "observe", "reason": "需要观察的原因"}}
-  3. 如果任务完成，输出：
-      {{"action": "complete", "response": "最终回复", "reason": "完成原因"}}
+  3. 如果任务完成或者需要与用户交互，输出：
+      {{"action": "complete", "response": "回复内容"}}
 
 注意，任务完成后，必须输出 complete 动作，并给出最终回复。注意！！！你可以进行思考，但是 content 不可以为空！！！
 """
@@ -127,9 +127,23 @@ class AIAgent:
         if not user_content:
             user_content.append({"type": "text", "text": "继续执行任务"})
         
-        # 构建消息
+        # 构建消息（包含系统消息 + 历史 + 本次用户消息）
+        def _history_to_messages() -> List[Dict[str, Any]]:
+            msgs: List[Dict[str, Any]] = []
+            for entry in self.conversation_history:
+                role = entry.get("role", "user")
+                entry_content = entry.get("content")
+                # 如果历史中存的是 CompletionMessage 对象，则抽取其 role 与 content
+                if hasattr(entry_content, "role") and hasattr(entry_content, "content"):
+                    extracted_role = getattr(entry_content, "role", role)
+                    extracted_content = getattr(entry_content, "content", "")
+                    msgs.append({"role": extracted_role, "content": extracted_content or ""})
+                else:
+                    msgs.append({"role": role, "content": entry_content})
+            return msgs
+
         messages = [{"role": "system", "content": self.system_prompt}]
-        messages.extend(self.conversation_history)
+        messages.extend(_history_to_messages())
         messages.append({"role": "user", "content": user_content})
         
         # 调试信息
@@ -181,22 +195,67 @@ class AIAgent:
             else:
                 self._debug_log(str(response))
 
-            content = response.choices[0].message.content
+            assistant_message = response.choices[0].message
+            content_text = getattr(assistant_message, "content", None)
             
-            self._debug_log("最终提取的 content:", content)
+            self._debug_log("最终提取的 content:", content_text)
             
-            # 解析响应
-            parsed = self._parse_json_response(content)
+            # 1) 将完整的 CompletionMessage 加入历史，保留 reasoning_content
+            self.add_to_history(getattr(assistant_message, "role", "assistant"), assistant_message)
+            
+            # 2) 如果只返回了 reasoning_content，而 content 为空或仅换行，则持续让模型推理直到出现非空 content（不添加新的 user 消息）
+            def _is_empty_or_newline(text: Optional[str]) -> bool:
+                if text is None:
+                    return True
+                return text.strip() == ""
+            
+            attempts = 0
+            max_attempts = 8
+            while _is_empty_or_newline(content_text) and attempts < max_attempts:
+                self._debug_log(f"检测到空内容，仅包含 reasoning_content，继续推理，第 {attempts + 1} 轮")
+                # 重新构建消息：系统 + 历史（包括已加入的 assistant 消息），不添加新的 user 消息
+                retry_messages = [{"role": "system", "content": self.system_prompt}]
+                retry_messages.extend(_history_to_messages())
+
+                retry_params = {
+                    "model": self.model,
+                    "messages": retry_messages,
+                    "temperature": 0.2,
+                    "max_tokens": 8192
+                }
+                retry_params["thinking"] = {"type": "enabled"}
+
+                retry_response = self.llm.chat.completions.create(**retry_params)
+
+                # 调试打印
+                self._debug_log("=== 连续推理 choices ===")
+                self._debug_log(f"choices: {retry_response.choices}")
+
+                retry_assistant_message = retry_response.choices[0].message
+                retry_content_text = getattr(retry_assistant_message, "content", None)
+
+                # 将本轮推理的消息加入历史
+                self.add_to_history(getattr(retry_assistant_message, "role", "assistant"), retry_assistant_message)
+
+                # 使用本轮结果作为最新消息
+                assistant_message = retry_assistant_message
+                content_text = retry_content_text
+                attempts += 1
+
+            if _is_empty_or_newline(content_text):
+                # 多轮推理后仍无有效 content
+                self._debug_log(f"连续 {attempts} 轮推理后仍未获得非空 content")
+                return "error", {"error": "LLM 推理多轮后仍未返回可解析的 content", "raw_content": content_text}
+            
+            # 解析响应（可能是一轮或二轮补全的 content）
+            parsed = self._parse_json_response(content_text or "")
             if not parsed:
-                self._debug_log("JSON 解析失败，原始内容:", content)
-                return "error", {"error": "无法解析 LLM 响应", "raw_content": content}
+                self._debug_log("JSON 解析失败，原始内容:", content_text)
+                return "error", {"error": "无法解析 LLM 响应", "raw_content": content_text}
             
             action = parsed.get("action", "").lower()
             if action not in ["tool", "observe", "complete", "think"]:
                 return "error", {"error": f"未知的动作类型: {action}", "parsed": parsed}
-            
-            # 添加到对话历史
-            self.add_to_history("assistant", content)
             
             return action, parsed
             
