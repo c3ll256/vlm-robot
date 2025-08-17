@@ -24,7 +24,7 @@ class AIAgent:
             "你的任务是理解用户指令并决定下一步行动。\n\n"
             "⚠️ 重要：必须严格按照JSON格式输出，不要添加任何其他文字！\n\n"
             "输出规则（只输出JSON，不要其他内容）：\n"
-            "1. 如果需要执行工具操作，输出：{\"action\": \"tool\", \"tool\": \"工具名\", \"arguments\": {参数对象}, \"reasoning\": \"执行原因\"}\n"
+            "1. 如果需要执行工具操作，输出（注意 action 必须是 tool，工具名放在 tool 字段）：{\"action\": \"tool\", \"tool\": \"工具名\", \"arguments\": {参数对象}, \"reasoning\": \"执行原因\"}\n"
             "2. 如果需要更多信息或观察，输出：{\"action\": \"observe\", \"reasoning\": \"需要观察的原因\"}\n"
             "3. 如果任务完成，输出：{\"action\": \"complete\", \"response\": \"最终回复\", \"reasoning\": \"完成原因\"}\n"
             "4. 如果需要思考下一步，输出：{\"action\": \"think\", \"reasoning\": \"思考内容\"}\n\n"
