@@ -25,6 +25,7 @@ class AIAgent:
 你有一系列 tools 可以控制机械蛇，工具如下：
 {tools_brief}
 
+执行工具时，如果没有 init，先进行 init 操作。
 其中，move_relative 工具的操作方式：
   1. 整体操作：
     整体旋转：
@@ -47,7 +48,7 @@ class AIAgent:
   3. 如果任务完成或者需要与用户交互，输出：
       {{"action": "complete", "response": "回复内容"}}
 
-注意，任务完成后，必须输出 complete 动作，并给出最终回复。注意！！！你可以进行思考，但是 content 不可以为空！！！
+注意，任务完成后，必须输出 complete 动作，并给出最终回复。
 """
     
     def _debug_log(self, *args):
@@ -197,22 +198,39 @@ class AIAgent:
 
             assistant_message = response.choices[0].message
             content_text = getattr(assistant_message, "content", None)
-            
+            reasoning_text = getattr(assistant_message, "reasoning_content", None)
+
             self._debug_log("最终提取的 content:", content_text)
-            
+
             # 1) 将完整的 CompletionMessage 加入历史，保留 reasoning_content
             self.add_to_history(getattr(assistant_message, "role", "assistant"), assistant_message)
-            
-            # 2) 如果只返回了 reasoning_content，而 content 为空或仅换行，则持续让模型推理直到出现非空 content（不添加新的 user 消息）
+
+            # 优先尝试从 content 解析，其次尝试从 reasoning_content 解析
+            def _try_parse_from_message(msg):
+                msg_content = getattr(msg, "content", None)
+                if msg_content and str(msg_content).strip():
+                    parsed_local = self._parse_json_response(str(msg_content))
+                    if parsed_local:
+                        return parsed_local, "content", str(msg_content)
+                msg_reason = getattr(msg, "reasoning_content", None)
+                if msg_reason is not None and str(msg_reason).strip():
+                    parsed_local = self._parse_json_response(str(msg_reason))
+                    if parsed_local:
+                        return parsed_local, "reasoning_content", str(msg_reason)
+                return None, "", str(msg_content) if msg_content is not None else ""
+
+            parsed, parsed_source, raw_used_text = _try_parse_from_message(assistant_message)
+
+            # 2) 当且仅当 content 为空/仅换行 且 无法从 reasoning_content 解析时，进入连续推理
             def _is_empty_or_newline(text: Optional[str]) -> bool:
                 if text is None:
                     return True
-                return text.strip() == ""
-            
+                return str(text).strip() == ""
+
             attempts = 0
             max_attempts = 8
-            while _is_empty_or_newline(content_text) and attempts < max_attempts:
-                self._debug_log(f"检测到空内容，仅包含 reasoning_content，继续推理，第 {attempts + 1} 轮")
+            while parsed is None and _is_empty_or_newline(content_text) and attempts < max_attempts:
+                self._debug_log(f"content 为空，reasoning_content 也未解析出有效结果，继续推理，第 {attempts + 1} 轮")
                 # 重新构建消息：系统 + 历史（包括已加入的 assistant 消息），不添加新的 user 消息
                 retry_messages = [{"role": "system", "content": self.system_prompt}]
                 retry_messages.extend(_history_to_messages())
@@ -232,26 +250,25 @@ class AIAgent:
                 self._debug_log(f"choices: {retry_response.choices}")
 
                 retry_assistant_message = retry_response.choices[0].message
-                retry_content_text = getattr(retry_assistant_message, "content", None)
+                content_text = getattr(retry_assistant_message, "content", None)
 
                 # 将本轮推理的消息加入历史
                 self.add_to_history(getattr(retry_assistant_message, "role", "assistant"), retry_assistant_message)
 
-                # 使用本轮结果作为最新消息
-                assistant_message = retry_assistant_message
-                content_text = retry_content_text
+                # 尝试解析本轮结果
+                parsed, parsed_source, raw_used_text = _try_parse_from_message(retry_assistant_message)
                 attempts += 1
 
-            if _is_empty_or_newline(content_text):
-                # 多轮推理后仍无有效 content
-                self._debug_log(f"连续 {attempts} 轮推理后仍未获得非空 content")
-                return "error", {"error": "LLM 推理多轮后仍未返回可解析的 content", "raw_content": content_text}
-            
-            # 解析响应（可能是一轮或二轮补全的 content）
-            parsed = self._parse_json_response(content_text or "")
-            if not parsed:
+            if parsed is None and _is_empty_or_newline(content_text):
+                # 多轮推理后仍无有效内容可解析
+                self._debug_log(f"连续 {attempts} 轮推理后仍未获得可解析的内容")
+                return "error", {"error": "LLM 推理多轮后仍未返回可解析的内容", "raw_content": raw_used_text}
+
+            # 解析成功（来自 content 或 reasoning_content）
+            if parsed is None:
+                # content 非空但解析失败，或其他异常情况
                 self._debug_log("JSON 解析失败，原始内容:", content_text)
-                return "error", {"error": "无法解析 LLM 响应", "raw_content": content_text}
+                return "error", {"error": "无法解析 LLM 响应", "raw_content": str(content_text) if content_text is not None else ""}
             
             action = parsed.get("action", "").lower()
             if action not in ["tool", "observe", "complete", "think"]:
