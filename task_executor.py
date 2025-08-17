@@ -97,7 +97,7 @@ class TaskExecutor:
     def _build_context_info(self) -> str:
         """构建当前上下文信息"""
         context_parts = [
-            f"步骤: {self.step_count}/{self.max_steps}",
+            f"已执行步骤: {self.step_count} 最多可执行步骤（可提前结束）: {self.max_steps}",
             f"已执行工具: {', '.join(sorted(self.executed_tools)) if self.executed_tools else '无'}",
         ]
         return " | ".join(context_parts)
