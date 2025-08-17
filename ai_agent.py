@@ -18,7 +18,6 @@ class AIAgent:
         self.conversation_history: List[Dict[str, Any]] = []
         
     def set_system_prompt(self, tools_brief: str):
-        print(f"tools_brief: {tools_brief}")
         """设置系统提示，包含工具列表"""
         self.system_prompt = f"""
 你是一条有温度、善于与人互动的 AI 机械蛇宠物，既会说话也会行动。
@@ -48,7 +47,7 @@ class AIAgent:
   3. 如果任务完成，输出：
       {{"action": "complete", "response": "最终回复", "reason": "完成原因"}}
 
-注意，任务完成后，必须输出 complete 动作，并给出最终回复，你可以进行思考，但是 content 不可以为空。
+注意，任务完成后，必须输出 complete 动作，并给出最终回复。注意！！！你可以进行思考，但是 content 不可以为空！！！
 """
     
     def _debug_log(self, *args):
@@ -147,19 +146,13 @@ class AIAgent:
                 "max_tokens": 8192
             }
             
-            # 根据配置决定是否启用thinking模式
-            if self.enable_thinking:
-                api_params["thinking"] = {"type": "enabled"}
-                self._debug_log("启用thinking模式")
-            else:
-                self._debug_log("禁用thinking模式")
+            api_params["thinking"] = {"type": "enabled"}
             
             response = self.llm.chat.completions.create(**api_params)
             
             # 调试：输出完整的响应结构
-            self._debug_log("=== 完整的 response 结构 ===")
-            self._debug_log(f"response 类型: {type(response)}")
-            self._debug_log(f"response 属性: {dir(response) if hasattr(response, '__dict__') else 'No attributes'}")
+            self._debug_log("=== 完整的 choices ===")
+            self._debug_log(f"choices: {response.choices}")
             
             if hasattr(response, '__dict__'):
                 try:
@@ -187,145 +180,10 @@ class AIAgent:
                     self._debug_log(str(response.__dict__))
             else:
                 self._debug_log(str(response))
-            
-            # 检查可能的响应位置
-            possible_content_locations = []
-            if hasattr(response, 'choices') and response.choices:
-                for i, choice in enumerate(response.choices):
-                    if hasattr(choice, 'message'):
-                        if hasattr(choice.message, 'content'):
-                            possible_content_locations.append(f"choices[{i}].message.content: {choice.message.content}")
-                        if hasattr(choice.message, 'reasoning_content'):
-                            possible_content_locations.append(f"choices[{i}].message.reasoning_content: {choice.message.reasoning_content}")
-                    if hasattr(choice, 'text'):
-                        possible_content_locations.append(f"choices[{i}].text: {choice.text}")
-                    if hasattr(choice, 'content'):
-                        possible_content_locations.append(f"choices[{i}].content: {choice.content}")
-            
-            if hasattr(response, 'content'):
-                possible_content_locations.append(f"response.content: {response.content}")
-            if hasattr(response, 'text'):
-                possible_content_locations.append(f"response.text: {response.text}")
-            
-            self._debug_log("可能的内容位置:")
-            for location in possible_content_locations:
-                self._debug_log(f"  {location}")
-            self._debug_log("=== 响应结构分析结束 ===")
-            
-            # 智谱AI在thinking模式下，内容可能在reasoning_content中
-            content = ""
-            if response.choices:
-                message = response.choices[0].message
-                # 首先尝试从content获取
-                if hasattr(message, 'content') and message.content and message.content.strip():
-                    content = message.content
-                # 如果content为空或只是换行，尝试从reasoning_content获取
-                elif hasattr(message, 'reasoning_content') and message.reasoning_content:
-                    # 检查reasoning_content是否包含JSON格式
-                    reasoning_text = message.reasoning_content
-                    if '<|begin_of_box|>' in reasoning_text and '<|end_of_box|>' in reasoning_text:
-                        content = reasoning_text
-                        self._debug_log("从reasoning_content获取JSON内容")
-                    else:
-                        # reasoning_content是自然语言，不是JSON，记录但不使用
-                        self._debug_log("reasoning_content包含自然语言而非JSON，跳过")
-                        self._debug_log(f"reasoning_content preview: {reasoning_text[:200]}...")
+
+            content = response.choices[0].message.content
             
             self._debug_log("最终提取的 content:", content)
-            
-            # 检查是否为空响应
-            if not content or content.strip() == "":
-                self._debug_log("LLM 返回空响应，尝试纯文本重试")
-                
-                # 如果包含图像，尝试纯文本模式重试
-                if any(item.get('type') == 'image_url' for item in user_content):
-                    self._debug_log("检测到图像消息，尝试纯文本重试")
-                    # 构建纯文本消息
-                    text_content = []
-                    for item in user_content:
-                        if item.get('type') == 'text':
-                            text_content.append(item)
-                    
-                    if not text_content:
-                        text_content = [{"type": "text", "text": "继续执行任务，已获取摄像头图像"}]
-                    
-                    # 构建纯文本消息重试
-                    retry_messages = [{"role": "system", "content": self.system_prompt}]
-                    retry_messages.extend(self.conversation_history[-5:])  # 只取最近5轮历史
-                    retry_messages.append({"role": "user", "content": text_content})
-                    
-                    try:
-                        self._debug_log("尝试纯文本模式重试")
-                        
-                        # 构建重试API参数
-                        retry_params = {
-                            "model": self.model,
-                            "messages": retry_messages,
-                            "temperature": 0.2,
-                            "max_tokens": 8192
-                        }
-                        
-                        if self.enable_thinking:
-                            retry_params["thinking"] = {"type": "enabled"}
-                        
-                        retry_response = self.llm.chat.completions.create(**retry_params)
-                        
-                        # 调试：重试响应的结构
-                        self._debug_log("=== 重试 response 结构 ===")
-                        self._debug_log(f"retry_response 类型: {type(retry_response)}")
-                        
-                        # 检查重试响应的可能内容位置
-                        retry_possible_content = []
-                        if hasattr(retry_response, 'choices') and retry_response.choices:
-                            for i, choice in enumerate(retry_response.choices):
-                                if hasattr(choice, 'message'):
-                                    if hasattr(choice.message, 'content'):
-                                        retry_possible_content.append(f"choices[{i}].message.content: {choice.message.content}")
-                                    if hasattr(choice.message, 'reasoning_content'):
-                                        retry_possible_content.append(f"choices[{i}].message.reasoning_content: {choice.message.reasoning_content}")
-                                if hasattr(choice, 'text'):
-                                    retry_possible_content.append(f"choices[{i}].text: {choice.text}")
-                                if hasattr(choice, 'content'):
-                                    retry_possible_content.append(f"choices[{i}].content: {choice.content}")
-                        
-                        self._debug_log("重试响应的可能内容位置:")
-                        for location in retry_possible_content:
-                            self._debug_log(f"  {location}")
-                        self._debug_log("=== 重试响应结构分析结束 ===")
-                        
-                        # 重试时也检查reasoning_content
-                        retry_content = ""
-                        if retry_response.choices:
-                            retry_message = retry_response.choices[0].message
-                            # 首先尝试从content获取
-                            if hasattr(retry_message, 'content') and retry_message.content and retry_message.content.strip():
-                                retry_content = retry_message.content
-                            # 如果content为空，尝试从reasoning_content获取
-                            elif hasattr(retry_message, 'reasoning_content') and retry_message.reasoning_content:
-                                retry_reasoning = retry_message.reasoning_content
-                                if '<|begin_of_box|>' in retry_reasoning and '<|end_of_box|>' in retry_reasoning:
-                                    retry_content = retry_reasoning
-                                    self._debug_log("重试：从reasoning_content获取JSON内容")
-                                else:
-                                    self._debug_log("重试：reasoning_content包含自然语言而非JSON，跳过")
-                        
-                        self._debug_log("重试最终提取的 content:", retry_content)
-                        
-                        if retry_content and retry_content.strip():
-                            self._debug_log("纯文本重试成功")
-                            content = retry_content
-                        else:
-                            self._debug_log("纯文本重试也失败")
-                            return "error", {"error": "LLM 返回空响应，可能需要重新开始任务"}
-                    except Exception as e:
-                        self._debug_log(f"纯文本重试异常: {e}")
-                        return "error", {"error": "LLM 返回空响应，可能需要重新开始任务"}
-                else:
-                    # 非图像消息的空响应处理
-                    if len(self.conversation_history) > 5:
-                        self.conversation_history = self.conversation_history[-5:]
-                        self._debug_log("已清理对话历史，建议重新开始任务")
-                    return "error", {"error": "LLM 返回空响应，可能需要重新开始任务"}
             
             # 解析响应
             parsed = self._parse_json_response(content)
