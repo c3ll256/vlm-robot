@@ -9,10 +9,11 @@ from typing import Any, Dict, List, Optional, Tuple
 class AIAgent:
     """AI 代理类，负责与 LLM 交互，理解用户指令并生成执行计划"""
     
-    def __init__(self, llm_client: Any, model: str = "glm-4.5v", debug: bool = False):
+    def __init__(self, llm_client: Any, model: str = "glm-4.5v", debug: bool = False, enable_thinking: bool = False):
         self.llm = llm_client
         self.model = model
         self.debug = debug
+        self.enable_thinking = enable_thinking
         self.system_prompt = ""
         self.conversation_history: List[Dict[str, Any]] = []
         
@@ -124,16 +125,99 @@ class AIAgent:
         self._debug_log(f"包含图像: {any(item.get('type') == 'image_url' for item in user_content)}")
         
         try:
-            response = self.llm.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.2,
-                max_tokens=8192,
-                thinking={"type": "enabled"}  # 启用智谱AI的思考模式
-            )
+            # 构建API调用参数
+            api_params = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": 0.2,
+                "max_tokens": 8192
+            }
             
-            content = response.choices[0].message.content if response.choices else ""
-            self._debug_log("LLM 原始响应:", content)
+            # 根据配置决定是否启用thinking模式
+            if self.enable_thinking:
+                api_params["thinking"] = {"type": "enabled"}
+                self._debug_log("启用thinking模式")
+            else:
+                self._debug_log("禁用thinking模式")
+            
+            response = self.llm.chat.completions.create(**api_params)
+            
+            # 调试：输出完整的响应结构
+            self._debug_log("=== 完整的 response 结构 ===")
+            self._debug_log(f"response 类型: {type(response)}")
+            self._debug_log(f"response 属性: {dir(response) if hasattr(response, '__dict__') else 'No attributes'}")
+            
+            if hasattr(response, '__dict__'):
+                try:
+                    response_dict = {}
+                    for key in response.__dict__:
+                        value = getattr(response, key)
+                        if key == 'choices' and value:
+                            # 特殊处理 choices
+                            response_dict[key] = []
+                            for i, choice in enumerate(value):
+                                choice_dict = {}
+                                if hasattr(choice, '__dict__'):
+                                    for choice_key in choice.__dict__:
+                                        choice_value = getattr(choice, choice_key)
+                                        choice_dict[choice_key] = str(choice_value)
+                                else:
+                                    choice_dict = str(choice)
+                                response_dict[key].append(choice_dict)
+                        else:
+                            response_dict[key] = str(value)
+                    
+                    self._debug_log(json.dumps(response_dict, indent=2, ensure_ascii=False))
+                except Exception as e:
+                    self._debug_log(f"JSON序列化失败: {e}")
+                    self._debug_log(str(response.__dict__))
+            else:
+                self._debug_log(str(response))
+            
+            # 检查可能的响应位置
+            possible_content_locations = []
+            if hasattr(response, 'choices') and response.choices:
+                for i, choice in enumerate(response.choices):
+                    if hasattr(choice, 'message'):
+                        if hasattr(choice.message, 'content'):
+                            possible_content_locations.append(f"choices[{i}].message.content: {choice.message.content}")
+                        if hasattr(choice.message, 'reasoning_content'):
+                            possible_content_locations.append(f"choices[{i}].message.reasoning_content: {choice.message.reasoning_content}")
+                    if hasattr(choice, 'text'):
+                        possible_content_locations.append(f"choices[{i}].text: {choice.text}")
+                    if hasattr(choice, 'content'):
+                        possible_content_locations.append(f"choices[{i}].content: {choice.content}")
+            
+            if hasattr(response, 'content'):
+                possible_content_locations.append(f"response.content: {response.content}")
+            if hasattr(response, 'text'):
+                possible_content_locations.append(f"response.text: {response.text}")
+            
+            self._debug_log("可能的内容位置:")
+            for location in possible_content_locations:
+                self._debug_log(f"  {location}")
+            self._debug_log("=== 响应结构分析结束 ===")
+            
+            # 智谱AI在thinking模式下，内容可能在reasoning_content中
+            content = ""
+            if response.choices:
+                message = response.choices[0].message
+                # 首先尝试从content获取
+                if hasattr(message, 'content') and message.content and message.content.strip():
+                    content = message.content
+                # 如果content为空或只是换行，尝试从reasoning_content获取
+                elif hasattr(message, 'reasoning_content') and message.reasoning_content:
+                    # 检查reasoning_content是否包含JSON格式
+                    reasoning_text = message.reasoning_content
+                    if '<|begin_of_box|>' in reasoning_text and '<|end_of_box|>' in reasoning_text:
+                        content = reasoning_text
+                        self._debug_log("从reasoning_content获取JSON内容")
+                    else:
+                        # reasoning_content是自然语言，不是JSON，记录但不使用
+                        self._debug_log("reasoning_content包含自然语言而非JSON，跳过")
+                        self._debug_log(f"reasoning_content preview: {reasoning_text[:200]}...")
+            
+            self._debug_log("最终提取的 content:", content)
             
             # 检查是否为空响应
             if not content or content.strip() == "":
@@ -158,14 +242,61 @@ class AIAgent:
                     
                     try:
                         self._debug_log("尝试纯文本模式重试")
-                        retry_response = self.llm.chat.completions.create(
-                            model=self.model,
-                            messages=retry_messages,
-                            temperature=0.2,
-                            max_tokens=1000,
-                            thinking={"type": "enabled"}
-                        )
-                        retry_content = retry_response.choices[0].message.content if retry_response.choices else ""
+                        
+                        # 构建重试API参数
+                        retry_params = {
+                            "model": self.model,
+                            "messages": retry_messages,
+                            "temperature": 0.2,
+                            "max_tokens": 8192
+                        }
+                        
+                        if self.enable_thinking:
+                            retry_params["thinking"] = {"type": "enabled"}
+                        
+                        retry_response = self.llm.chat.completions.create(**retry_params)
+                        
+                        # 调试：重试响应的结构
+                        self._debug_log("=== 重试 response 结构 ===")
+                        self._debug_log(f"retry_response 类型: {type(retry_response)}")
+                        
+                        # 检查重试响应的可能内容位置
+                        retry_possible_content = []
+                        if hasattr(retry_response, 'choices') and retry_response.choices:
+                            for i, choice in enumerate(retry_response.choices):
+                                if hasattr(choice, 'message'):
+                                    if hasattr(choice.message, 'content'):
+                                        retry_possible_content.append(f"choices[{i}].message.content: {choice.message.content}")
+                                    if hasattr(choice.message, 'reasoning_content'):
+                                        retry_possible_content.append(f"choices[{i}].message.reasoning_content: {choice.message.reasoning_content}")
+                                if hasattr(choice, 'text'):
+                                    retry_possible_content.append(f"choices[{i}].text: {choice.text}")
+                                if hasattr(choice, 'content'):
+                                    retry_possible_content.append(f"choices[{i}].content: {choice.content}")
+                        
+                        self._debug_log("重试响应的可能内容位置:")
+                        for location in retry_possible_content:
+                            self._debug_log(f"  {location}")
+                        self._debug_log("=== 重试响应结构分析结束 ===")
+                        
+                        # 重试时也检查reasoning_content
+                        retry_content = ""
+                        if retry_response.choices:
+                            retry_message = retry_response.choices[0].message
+                            # 首先尝试从content获取
+                            if hasattr(retry_message, 'content') and retry_message.content and retry_message.content.strip():
+                                retry_content = retry_message.content
+                            # 如果content为空，尝试从reasoning_content获取
+                            elif hasattr(retry_message, 'reasoning_content') and retry_message.reasoning_content:
+                                retry_reasoning = retry_message.reasoning_content
+                                if '<|begin_of_box|>' in retry_reasoning and '<|end_of_box|>' in retry_reasoning:
+                                    retry_content = retry_reasoning
+                                    self._debug_log("重试：从reasoning_content获取JSON内容")
+                                else:
+                                    self._debug_log("重试：reasoning_content包含自然语言而非JSON，跳过")
+                        
+                        self._debug_log("重试最终提取的 content:", retry_content)
+                        
                         if retry_content and retry_content.strip():
                             self._debug_log("纯文本重试成功")
                             content = retry_content

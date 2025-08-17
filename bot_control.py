@@ -62,7 +62,7 @@ def build_tools_brief(tools_obj: Any) -> str:
         lines.append(f"- {name}: {desc}")
     return "\n".join(lines)
 
-async def run_chat(model: str | None = None, debug: bool = False) -> None:
+async def run_chat(model: str | None = None, debug: bool = False, thinking: bool = False) -> None:
     """AI 机械蛇宠物主程序 - 持续对话模式"""
     model = model or os.environ.get("OPENAI_MODEL", "glm-4.5v")
     server_params = get_server_params()
@@ -75,8 +75,13 @@ async def run_chat(model: str | None = None, debug: bool = False) -> None:
             tools_brief = build_tools_brief(tools)
 
             # 创建 AI 代理
-            ai_agent = AIAgent(llm, model=model, debug=debug)
+            ai_agent = AIAgent(llm, model=model, debug=debug, enable_thinking=thinking)
             ai_agent.set_system_prompt(tools_brief)
+            
+            if thinking:
+                print("⚠️  已启用thinking模式，可能影响响应格式")
+            else:
+                print("✅ 使用标准模式，确保JSON格式输出")
 
             print("🐍 AI 机械蛇宠物已上线！")
             print("输入指令开始对话，输入 'q'、'quit' 或 'exit' 退出。")
@@ -122,7 +127,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AI 机械蛇宠物 - 智能对话控制")
     parser.add_argument("--model", default=None, help="LLM 模型名（默认从 OPENAI_MODEL 读取或 glm-4.5v）")
     parser.add_argument("--debug", action="store_true", help="开启调试日志")
+    parser.add_argument("--thinking", action="store_true", help="启用智谱AI的thinking模式（可能影响JSON格式输出）")
     args = parser.parse_args()
 
     # 启动 AI 机械蛇宠物
-    asyncio.run(run_chat(model=args.model, debug=args.debug))
+    asyncio.run(run_chat(model=args.model, debug=args.debug, thinking=args.thinking))
