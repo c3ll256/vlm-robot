@@ -3,3 +3,4 @@ mcp
 zai-sdk
 requests
 python-dotenv
+websocket-client

@@ -7,7 +7,12 @@ from typing import Literal, cast
 
 from mcp.server.fastmcp import FastMCP, Image
 from tools.phosphobot import PhosphoClient
+from tools.autoglm import run_autoglm
 from tools.replay_api import launch_replay
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Object-to-episode mapping
 OBJECT_TO_EPISODE = {
@@ -37,7 +42,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
             print("Leaving Phosphobot running (PHOSPHOBOT_AUTOSTOP disabled)")
 
 # Create server with lifespan
-mcp = FastMCP("phospho", lifespan=app_lifespan, dependencies=["requests", "opencv-python-headless", "pillow", "psutil"])
+mcp = FastMCP("phospho", lifespan=app_lifespan, dependencies=["requests", "opencv-python-headless", "pillow", "psutil", "websocket-client"])
 
 
 @mcp.tool()
@@ -284,6 +289,26 @@ def pickup_object(name: Literal["paper", "pen", "pencil"]) -> str:
     launch_replay(episode_id=episode_id, dataset_name="mcp-demo", phospho=app_ctx.phospho)
     return f"Launched replay for {name}."
 
+
+@mcp.tool(name="autoglm_run")
+def autoglm_run(
+    instruction: str,
+    timeout_sec: int | None = 60,
+    token: str | None = None,
+) -> dict:
+    """
+    调用 AutoGLM 执行单条任务，并返回完整可读的输出文本。
+
+    - instruction: 需要执行的指令，例如 "帮我点一杯奶茶"、"从小红书收集云南旅游攻略"
+    - timeout_sec: 最长等待时长（秒），默认 60
+    - token: 可选，显式传入 API Token；如果为空，将从环境变量 ZHIPUAI_AUTOGM_TOKEN 或 ZHIPUAI_API_KEY 读取
+    """
+    tok = token or os.environ.get("ZHIPUAI_AUTOGLM_TOKEN") or os.environ.get("ZHIPUAI_API_KEY")
+    if not tok:
+        return {"error": "Missing AutoGLM token. Set ZHIPUAI_AUTOGLM_TOKEN or pass token param."}
+    transcript = run_autoglm(instruction=instruction, token=tok, timeout_sec=timeout_sec or 60)
+    # 返回结构化结果，便于上层展示完整文本
+    return {"transcript": transcript}
 
 @mcp.tool(name="complete_captcha")
 def complete_captcha() -> str:
