@@ -49,6 +49,11 @@ class AIAgent:
       {{"action": "complete", "response": "回复内容"}}
 
 注意，任务完成后，必须输出 complete 动作，并给出最终回复。
+
+重要指令约束（请严格遵守）：
+   - 当用户要求“打招呼/问好/hello/hi”等：在完成初始化(move_init)后，必须调用 move_hello 工具达成目标，不要只是一味 observe。
+   - 避免连续 observe 超过 2 次；若没有新信息，请直接调用合适的工具推进任务。
+   - 你的输出必须是严格的 JSON；不要输出解释或自然语言。
 """
     
     def _debug_log(self, *args):
@@ -161,7 +166,8 @@ class AIAgent:
                 "max_tokens": 8192
             }
             
-            api_params["thinking"] = {"type": "enabled"}
+            if self.enable_thinking:
+                api_params["thinking"] = {"type": "enabled"}
             
             response = self.llm.chat.completions.create(**api_params)
             
@@ -228,7 +234,7 @@ class AIAgent:
                 return str(text).strip() == ""
 
             attempts = 0
-            max_attempts = 8
+            max_attempts = 3
             while parsed is None and _is_empty_or_newline(content_text) and attempts < max_attempts:
                 self._debug_log(f"content 为空，reasoning_content 也未解析出有效结果，继续推理，第 {attempts + 1} 轮")
                 # 重新构建消息：系统 + 历史（包括已加入的 assistant 消息），不添加新的 user 消息
@@ -241,7 +247,8 @@ class AIAgent:
                     "temperature": 0.2,
                     "max_tokens": 8192
                 }
-                retry_params["thinking"] = {"type": "enabled"}
+                if self.enable_thinking:
+                    retry_params["thinking"] = {"type": "enabled"}
 
                 retry_response = self.llm.chat.completions.create(**retry_params)
 
