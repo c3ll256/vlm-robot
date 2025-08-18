@@ -217,8 +217,20 @@ def move_hello(name: str | None = None, robot_id: int | None = None) -> str:
     """
     ctx = mcp.get_context()
     app_ctx = cast(AppContext, ctx.request_context.lifespan_context)
-    app_ctx.phospho.hello(name=name, robot_id=robot_id)
+    # app_ctx.phospho.hello(name=name, robot_id=robot_id)
+    launch_replay(episode_id=1, dataset_name="hello", phospho=app_ctx.phospho)
     return "Hello command sent."
+
+@mcp.tool()
+def move_confirm(name: str | None = None, robot_id: int | None = None) -> str:
+    """
+    Send a confirm action via the phosphobot backend.
+    """
+    ctx = mcp.get_context()
+    app_ctx = cast(AppContext, ctx.request_context.lifespan_context)
+    # app_ctx.phospho.hello(name=name, robot_id=robot_id)
+    launch_replay(episode_id=2, dataset_name="confirm", phospho=app_ctx.phospho)
+    return "Confirm action sent."
 
 @mcp.tool()
 def get_robot_status(robot_id: int | None = None) -> dict:

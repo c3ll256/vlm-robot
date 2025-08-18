@@ -25,7 +25,7 @@ class AIAgent:
 你有一系列 tools 可以控制机械蛇，工具如下：
 {tools_brief}
 
-执行工具时，如果没有 init，先进行 init 操作。
+执行工具时，如果没有 init，先进行 init 操作。注意，只 init 一次。
 其中，move_relative 工具的操作方式：
   1. 整体操作：
     整体旋转：
@@ -51,9 +51,10 @@ class AIAgent:
 注意，任务完成后，必须输出 complete 动作，并给出最终回复。
 
 重要指令约束（请严格遵守）：
-   - 当用户要求“打招呼/问好/hello/hi”等：在完成初始化(move_init)后，必须调用 move_hello 工具达成目标，不要只是一味 observe。
+   - 当用户要求“打招呼/问好/hello/hi”等：必须调用 move_hello 工具达成目标，不要只是一味 observe。
+   - 如果用户要求要做些什么（除了打招呼），可以先调用 move_confirm 告诉用户你知道了，然后开始执行任务。
    - 避免连续 observe 超过 2 次；若没有新信息，请直接调用合适的工具推进任务。
-   - 你的输出必须是严格的 JSON；不要输出解释或自然语言。
+   - 你的输出必须是严格的 JSON, 不要输出解释或自然语言。
 """
     
     def _debug_log(self, *args):
