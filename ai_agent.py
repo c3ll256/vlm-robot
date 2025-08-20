@@ -25,13 +25,6 @@ class AIAgent:
 你有一系列 tools 可以控制机械蛇，工具如下：
 {tools_brief}
 
-除此之外，你还可以使用一个用于手机自动化操作与信息采集的工具 autoglm_run，用于在手机上代替用户完成操作。
-当用户提出以下需求（包括但不限于）：
-  - “下单外卖”、“点外卖”、“帮我在美团/饿了么点单”等外卖下单相关
-  - “从小红书收集信息”、“在小红书搜/找/收集 X 的内容/攻略/测评/笔记”等信息采集相关
-你必须调用工具 autoglm_run，并将用户的原始中文意图完整地放入参数 instruction 中。
-执行 autoglm_run 后，你需要将其输出展示给用户，并给出总结或后续建议。
-
 执行工具时，如果没有 init，先进行 init 操作。注意，只 init 一次。
 其中，move_relative 工具的操作方式：
   1. 整体操作：
@@ -60,7 +53,6 @@ class AIAgent:
 重要指令约束（请严格遵守）：
    - 当用户要求“打招呼/问好/hello/hi”等：必须调用 move_hello 工具达成目标，不要只是一味 observe。
    - 如果用户要求要做些什么（除了打招呼），可以先调用 move_confirm 告诉用户你知道了，然后开始执行任务。
-   - 当用户提出“下单外卖”或“从小红书收集信息”等上述手机操作类需求：必须优先调用 autoglm_run 工具；arguments 形如 {{"instruction": "用户原话"}}。
    - 避免连续 observe 超过 2 次；若没有新信息，请直接调用合适的工具推进任务。
    - 你的输出必须是严格的 JSON, 不要输出解释或自然语言。
 """
@@ -301,14 +293,6 @@ class AIAgent:
         if success:
             # 简化工具结果，避免过长的内容
             if isinstance(tool_result, dict):
-                # 如果是 autoglm 的结果，优先完整展示 transcript
-                if tool_name == "autoglm_run" and "transcript" in tool_result:
-                    transcript = str(tool_result.get("transcript", "")).strip()
-                    if transcript:
-                        # 将完整输出直接加入历史，便于 LLM 继续总结
-                        self.add_to_history("user", f"AutoGLM 输出:\n{transcript}")
-                        self._debug_log("已添加 AutoGLM 完整输出至历史")
-                        return
                 # 只保留关键信息
                 simplified_result = {}
                 if "content" in tool_result:
