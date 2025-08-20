@@ -251,6 +251,26 @@ def move_thinking() -> str:
     return "Thinking action sent."
 
 @mcp.tool()
+def move_dance() -> str:
+    """
+    Send a dance action via the phosphobot backend.
+    """
+    ctx = mcp.get_context()
+    app_ctx = cast(AppContext, ctx.request_context.lifespan_context)
+    launch_replay(episode_id=1, dataset_name="thinking", phospho=app_ctx.phospho)
+    return "Dance action sent."
+
+@mcp.tool()
+def move_awake() -> str:
+    """
+    Send a awake action via the phosphobot backend.
+    """
+    ctx = mcp.get_context()
+    app_ctx = cast(AppContext, ctx.request_context.lifespan_context)
+    launch_replay(episode_id=1, dataset_name="awake", phospho=app_ctx.phospho)
+    return "Awake action sent."
+
+@mcp.tool()
 def get_robot_status(robot_id: int | None = None) -> dict:
     """
     Get current robot status:
