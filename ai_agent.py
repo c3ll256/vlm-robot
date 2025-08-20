@@ -25,7 +25,7 @@ class AIAgent:
 你有一系列 tools 可以控制机械蛇，工具如下：
 {tools_brief}
 
-执行工具时，如果没有 init，先进行 init 操作。注意，只 init 一次。
+执行工具时（包括打招呼），如果还没有 init，先进行 init 操作。注意，只 init 一次。
 其中，move_relative 工具的操作方式：
   1. 整体操作：
     整体旋转：

@@ -211,26 +211,34 @@ def move_sleep(robot_id: int | None = None) -> str:
     return "Move to sleep position requested."
 
 @mcp.tool()
-def move_hello(name: str | None = None, robot_id: int | None = None) -> str:
+def move_hello() -> str:
     """
     Send a hello greeting via the phosphobot backend.
     """
     ctx = mcp.get_context()
     app_ctx = cast(AppContext, ctx.request_context.lifespan_context)
-    # app_ctx.phospho.hello(name=name, robot_id=robot_id)
     launch_replay(episode_id=1, dataset_name="hello", phospho=app_ctx.phospho)
     return "Hello command sent."
 
 @mcp.tool()
-def move_confirm(name: str | None = None, robot_id: int | None = None) -> str:
+def move_confirm() -> str:
     """
     Send a confirm action via the phosphobot backend.
     """
     ctx = mcp.get_context()
     app_ctx = cast(AppContext, ctx.request_context.lifespan_context)
-    # app_ctx.phospho.hello(name=name, robot_id=robot_id)
-    launch_replay(episode_id=2, dataset_name="confirm", phospho=app_ctx.phospho)
+    launch_replay(episode_id=0, dataset_name="hello", phospho=app_ctx.phospho)
     return "Confirm action sent."
+
+@mcp.tool()
+def move_rest() -> str:
+    """
+    Send a rest (sleep) action via the phosphobot backend.
+    """
+    ctx = mcp.get_context()
+    app_ctx = cast(AppContext, ctx.request_context.lifespan_context)
+    launch_replay(episode_id=0, dataset_name="rest", phospho=app_ctx.phospho)
+    return "Rest action sent."
 
 @mcp.tool()
 def get_robot_status(robot_id: int | None = None) -> dict:
