@@ -200,15 +200,15 @@ def torque_toggle(enabled: bool, robot_id: int | None = None) -> str:
     app_ctx.phospho.post("/torque/toggle", json={"torque_status": enabled}, params={"robot_id": robot_id} if robot_id is not None else None)
     return f"Torque {'enabled' if enabled else 'disabled'}."
 
-@mcp.tool()
-def move_sleep(robot_id: int | None = None) -> str:
-    """
-    Move the robot to a predefined sleep (rest) position.
-    """
-    ctx = mcp.get_context()
-    app_ctx = cast(AppContext, ctx.request_context.lifespan_context)
-    app_ctx.phospho.post("/move/sleep", json={}, params={"robot_id": robot_id} if robot_id is not None else None)
-    return "Move to sleep position requested."
+# @mcp.tool()
+# def move_sleep(robot_id: int | None = None) -> str:
+#     """
+#     Move the robot to a predefined sleep (rest) position.
+#     """
+#     ctx = mcp.get_context()
+#     app_ctx = cast(AppContext, ctx.request_context.lifespan_context)
+#     app_ctx.phospho.post("/move/sleep", json={}, params={"robot_id": robot_id} if robot_id is not None else None)
+#     return "Move to sleep position requested."
 
 @mcp.tool()
 def move_hello() -> str:
@@ -239,6 +239,16 @@ def move_rest() -> str:
     app_ctx = cast(AppContext, ctx.request_context.lifespan_context)
     launch_replay(episode_id=0, dataset_name="rest", phospho=app_ctx.phospho)
     return "Rest action sent."
+
+@mcp.tool()
+def move_thinking() -> str:
+    """
+    Send a thinking action via the phosphobot backend.
+    """
+    ctx = mcp.get_context()
+    app_ctx = cast(AppContext, ctx.request_context.lifespan_context)
+    launch_replay(episode_id=0, dataset_name="thinking", phospho=app_ctx.phospho)
+    return "Thinking action sent."
 
 @mcp.tool()
 def get_robot_status(robot_id: int | None = None) -> dict:
